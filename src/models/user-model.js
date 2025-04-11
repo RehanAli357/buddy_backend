@@ -1,29 +1,29 @@
-import { getConnection } from "../../config/mysql-connetion.js";
 import bcrypt from "bcryptjs";
+import { createResponse } from "../utils/create-response.js";
+import { query, userQueryById, userQueryByUsername } from "./utils.js";
+import { omitFields } from "../utils/omitFields.js";
 
 // CREATE COMMAND
-
-export const createUserTable = async () => {
-  try {
-    const db = await getConnection();
-
-    await db.execute(`CREATE TABLE IF NOT EXISTS users (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      username VARCHAR(100) NOT NULL UNIQUE,
-      firstname VARCHAR(100) NOT NULL,
-      lastname VARCHAR(100) NOT NULL,
-      password VARCHAR(255) NOT NULL,
-      usertype ENUM('free', 'premium') NOT NULL DEFAULT 'free',
-      email VARCHAR(100) NOT NULL UNIQUE,
-      createdat TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updatedat TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      deleted TINYINT(1) NOT NULL DEFAULT 0
-    )`);
-    console.log("✅ Table 'users' is ready");
-  } catch (err) {
-    console.log(err.message);
-  }
-};
+// Use this when you want to create a user table
+// export const createUserTable = async () => {
+//   try {
+//     await query(`CREATE TABLE IF NOT EXISTS users (
+//       id INT AUTO_INCREMENT PRIMARY KEY,
+//       username VARCHAR(100) NOT NULL UNIQUE,
+//       firstname VARCHAR(100) NOT NULL,
+//       lastname VARCHAR(100) NOT NULL,
+//       password VARCHAR(255) NOT NULL,
+//       usertype ENUM('free', 'premium') NOT NULL DEFAULT 'free',
+//       email VARCHAR(100) NOT NULL UNIQUE,
+//       createdat TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+//       updatedat TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+//       deleted TINYINT(1) NOT NULL DEFAULT 0
+//     )`,[]);
+//     console.log("✅ Table 'users' is ready");
+//   } catch (err) {
+//     console.log(err.message);
+//   }
+// };
 
 // INSERT COMMAND
 
@@ -36,15 +36,13 @@ export const insertUser = async (
   email
 ) => {
   try {
-    const db = await getConnection();
-
     const query = `
     INSERT INTO users (username, firstname, lastname, password, usertype, email)
     VALUES (?, ?, ?, ?, ?, ?)
   `;
     const hashPassword = await bcrypt.hash(password, 10);
 
-    const [result] = await db.execute(query, [
+    const [result] = await query(query, [
       username,
       firstname,
       lastname,
@@ -52,338 +50,189 @@ export const insertUser = async (
       usertype,
       email,
     ]);
-    return {
-      status: true,
-      message: "User Registered",
+    return createResponse(true, "User Registered", 200, {
       registeredId: result.insertId,
-      code: 200,
-    };
+    });
   } catch (error) {
     console.log("User Not Registered", error.message);
-    return {
-      status: false,
-      message: "User not  Registered",
-      code: 500,
-    };
+    return createResponse(false, "Error, User not registered", 500);
   }
 };
 
 export const selectUsers = async () => {
   try {
-    const db = await getConnection();
-    const [row] = await db.execute("SELECT * FROM users");
+    const [row] = await query("SELECT * FROM users", []);
     console.log(row);
   } catch (error) {
     console.log("Error selecting user:", error.message);
   }
 };
 
-export const selectUserById = async (id) => {
+export const selectUserById = async (userId) => {
   try {
-    const db = await getConnection();
-    const [row] = await db.execute(`SELECT * FROM users WHERE id = ? AND deleted = 0`, [id]);
-    if (row.length > 0) {
-      const { password, deleted, ...userWithoutPassword } = row[0];
+    const [row] = await userQueryById([userId]);
 
-      return {
-        status: true,
-        message: "User found",
-        data: userWithoutPassword,
-        code: 200,
-      };
+    if (row.length > 0) {
+      const filteredData = omitFields(row[0], ["password", "deleted"]);
+      return createResponse(true, "User found", 200, filteredData);
     } else {
-      return {
-        status: false,
-        message: "User not found",
-        code: 404,
-      };
+      return createResponse(false, "User not found", 404);
     }
   } catch (error) {
     console.log("Error selecting user:", error.message);
-    return {
-      status: false,
-      message: "Error in finding user",
-      code: 500,
-    };
+    return createResponse(false, "Error in finding user", 500);
   }
 };
 
 export const loginUserDB = async (username, password) => {
   try {
-    const db = await getConnection();
-    const [user] = await db.execute(`SELECT * FROM users WHERE username = ? AND deleted = 0`, [
-      username,
-    ]);
+    const [user] = await userQueryByUsername([username]);
 
     if (user.length > 0) {
       const isMatch = await bcrypt.compare(password, user[0].password);
       if (isMatch) {
-        const { password, deleted, ...userWithoutPassword } = user[0];
-        return {
-          status: true,
-          message: "User found",
-          data: userWithoutPassword,
-          code: 200,
-        };
+        const filteredData = omitFields(row[0], ["password", "deleted"]);
+
+        return createResponse(true, "User Found", 200, filteredData);
       } else {
-        return {
-          status: false,
-          message: "invalid credential",
-          code: 401,
-        };
+        return createResponse(false, "invalid credential", 401);
       }
     } else {
-      return {
-        status: false,
-        message: "No user found",
-        code: 400,
-      };
+      return createResponse(false, "No user found", 400);
     }
   } catch (error) {
     console.log("Error finding user:", error.message);
-    return {
-      status: false,
-      message: "Error in finding user from database",
-      code: 500,
-    };
+    return createResponse(500, "Error in finding user", 500);
   }
 };
 
 export const changePassword = async (userId, password, newpassword) => {
   try {
-    const db = await getConnection();
-    const [user] = await db.execute(`SELECT * FROM users WHERE id = ? AND deleted = 0`, [
-      userId,
-    ]);
+    const [user] = await userQueryById([userId]);
 
     if (user.length > 0) {
       const isMatch = await bcrypt.compare(password, user[0].password);
       if (isMatch) {
         const newHashPassword = await bcrypt.hash(newpassword, 10);
-        const [result] = await db.execute(
-          `UPDATE users SET password = ?, updatedat = CURRENT_TIMESTAMP WHERE id = ?`,
+        const [result] = await query(
+          `UPDATE users SET password = ?, updatedat = CURRENT_TIMESTAMP WHERE id = ?  AND deleted = 0`,
           [newHashPassword, userId]
         );
         if (result.affectedRows > 0) {
-          return {
-            status: true,
-            message: "User Password updated",
-            code: 200,
-          };
+          return createResponse(true, "User password updated", 200);
         } else {
-          return {
-            status: false,
-            message: "Unable to update the password",
-            code: 500,
-          };
+          return createResponse(false, "Unable to update the password", 500);
         }
       } else {
-        return {
-          status: false,
-          message: "Invalid credentials",
-          code: 401,
-        };
+        return createResponse(false, "Invalid credentials", 401);
       }
     } else {
-      return {
-        status: false,
-        message: "No user found",
-        code: 404,
-      };
+      return createResponse(false, "No user found", 404);
     }
   } catch (error) {
     console.log("❌ Error in changing user password:", error.message);
-    return {
-      status: false,
-      message: "Error in changing user password",
-      code: 500,
-    };
+    return createResponse(false, "Error in changing user password", 500);
   }
 };
 
 export const changeEmail = async (userId, newmail) => {
   try {
-    const db = await getConnection();
-    const [user] = await db.execute(`SELECT * FROM users WHERE id = ? AND deleted = 0`, [
-      userId,
-    ]);
+    const [user] = await userQueryById([userId]);
 
     if (user.length > 0) {
-      const [result] = await db.execute(
-        `UPDATE users SET email = ?, updatedat = CURRENT_TIMESTAMP WHERE id = ?`,
+      const [result] = await query(
+        `UPDATE users SET email = ?, updatedat = CURRENT_TIMESTAMP WHERE id = ?  AND deleted = 0`,
         [newmail, userId]
       );
       if (result.affectedRows > 0) {
-        return {
-          status: true,
-          message: "User Email updated",
-          code: 200,
-        };
+        return createResponse(true, "User Email updated");
       } else {
-        return {
-          status: false,
-          message: "User Email not updated",
-          code: 500,
-        };
+        return createResponse(false, "User email not updated", 500);
       }
     } else {
-      return {
-        status: false,
-        message: "User Not found",
-        code: 404,
-      };
+      return createResponse(false, "User not found", 404);
     }
   } catch (error) {
     console.log("Error in changing user Email", error.message);
-    return {
-      status: false,
-      message: "Error in changing user Email",
-      code: 500,
-    };
+    return createResponse(false, "Error in chaning user Email", 500);
   }
 };
 
 export const changeUsername = async (userId, newusername) => {
   try {
-    const db = await getConnection();
-
-    const [user] = await db.execute(`SELECT * FROM users WHERE id = ? AND deleted = 0`, [
-      userId,
-    ]);
+    const [user] = await userQueryById([userId]);
 
     if (user.length === 0) {
-      return {
-        status: false,
-        message: "User Not found",
-        code: 404,
-      };
+      return createResponse(false, "User not found", 404);
     }
 
-    const [existing] = await db.execute(
-      `SELECT * FROM users WHERE username = ?`,
-      [newusername]
-    );
+    const [existing] = await userQueryByUsername([newusername]);
 
     if (existing.length > 0) {
-      return {
-        status: false,
-        message: "Username already taken ",
-        code: 409,
-      };
+      return createResponse(false, "Username already taken", 409);
     }
 
-    const [result] = await db.execute(
-      `UPDATE users SET username = ?, updatedat = CURRENT_TIMESTAMP WHERE id = ?`,
+    const [result] = await query(
+      `UPDATE users SET username = ?, updatedat = CURRENT_TIMESTAMP WHERE id = ? AND deleted = 0`,
       [newusername, userId]
     );
 
     if (result.affectedRows > 0) {
       console.log("✅ Username updated successfully for:", newusername);
-      return {
-        status: true,
-        message: "Username Updated",
-        code: 200,
-      };
+      return createResponse(true, "Username updated", 200);
     } else {
-      return {
-        status: false,
-        message: "Unable to update Username",
-        code: 500,
-      };
+      return createResponse(false, "Unable to update username", 500);
     }
   } catch (error) {
     console.log("❌ Error in changing username:", error.message);
-    return {
-      status: false,
-      message: " Error in updating username",
-      code: 500,
-    };
+    return createResponse(false, "Error in updating username", 500);
   }
 };
 
 export const changeUserType = async (userId) => {
   try {
-    const db = await getConnection();
-
-    const [user] = await db.execute(`SELECT * FROM users WHERE id = ? AND deleted = 0`, [
-      userId,
-    ]);
+    const [user] = await userQueryById([userId]);
 
     if (user.length === 0) {
-      return {
-        status: false,
-        message: "User Not found",
-        code: 404,
-      };
+      return createResponse(false, "User not found", 404);
     }
 
-    const [result] = await db.execute(
-      `UPDATE users SET usertype = ?, updatedat = CURRENT_TIMESTAMP WHERE id = ?`,
+    const [result] = await query(
+      `UPDATE users SET usertype = ?, updatedat = CURRENT_TIMESTAMP WHERE id = ? AND deleted = 0`,
       ["premium", userId]
     );
     if (result.affectedRows > 0) {
-      return {
-        status: true,
-        message: "User has been upgraded",
-        code: 200,
-      };
+      return createResponse(true, "USer has been upgraded", 200);
     } else {
-      return {
-        status: false,
-        message: "Unable to upgrade user",
-        code: 500,
-      };
+      return createResponse(false, "Unable to upgrade user", 500);
     }
   } catch (error) {
     console.log("❌ Error in upgrading user:", error.message);
-    return {
-      status: false,
-      message: "Error in upgrading user",
-      code: 500,
-    };
+    return createResponse(false, "Error in upgrading user", 500);
   }
 };
-
 
 export const changeUserDeleteType = async (userId) => {
   try {
     const db = await getConnection();
 
-    const [user] = await db.execute(`SELECT * FROM users WHERE id = ? AND deleted = 0`, [
-      userId,
-    ]);
+    const [user] = await userQueryById([userId]);
 
     if (user.length === 0) {
-      return {
-        status: false,
-        message: "User Not found",
-        code: 404,
-      };
+      return createResponse(false, "USer not found", 404);
     }
 
-    const [result] = await db.execute(
-      `UPDATE users SET deleted = ?, updatedat = CURRENT_TIMESTAMP WHERE id = ?`,
+    const [result] = await query(
+      `UPDATE users SET deleted = ?, updatedat = CURRENT_TIMESTAMP WHERE id = ? AND deleted = 0`,
       [1, userId]
     );
     if (result.affectedRows > 0) {
-      return {
-        status: true,
-        message: "User account has been deleted",
-        code: 200,
-      };
+      return createResponse(true, "User account has been deleted");
     } else {
-      return {
-        status: false,
-        message: "Unable to deleted user account",
-        code: 500,
-      };
+      return createResponse(false, "Unable to delete user account", 500);
     }
   } catch (error) {
     console.log("❌ Error in deleting user account:", error.message);
-    return {
-      status: false,
-      message: "Error in deleting user account",
-      code: 500,
-    };
+    return createResponse(false, "Error in deleting user account", 500);
   }
 };
