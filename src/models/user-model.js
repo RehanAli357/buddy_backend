@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { createResponse } from "../utils/create-response.js";
 import { query, userQueryById, userQueryByUsername } from "./utils.js";
 import { omitFields } from "../utils/omitFields.js";
+import { insertUserFinance } from "./user-finence.js";
 
 // CREATE COMMAND
 // Use this when you want to create a user table
@@ -33,16 +34,19 @@ export const insertUser = async (
   lastname,
   password,
   usertype,
-  email
+  email,
+  monthlyIncome,
+  monthlyExpenses,
+  monthlySavings
 ) => {
   try {
-    const query = `
+    const userQuery = `
     INSERT INTO users (username, firstname, lastname, password, usertype, email)
     VALUES (?, ?, ?, ?, ?, ?)
   `;
     const hashPassword = await bcrypt.hash(password, 10);
 
-    const [result] = await query(query, [
+    const [result] = await query(userQuery, [
       username,
       firstname,
       lastname,
@@ -50,9 +54,20 @@ export const insertUser = async (
       usertype,
       email,
     ]);
-    return createResponse(true, "User Registered", 200, {
-      registeredId: result.insertId,
-    });
+
+    const userFinance = await insertUserFinance(
+      result.insertId,
+      monthlyIncome,
+      monthlyExpenses,
+      monthlySavings
+    );
+    if (result && userFinance.status === true) {
+      return createResponse(true, "User Registered", 200, {
+        registeredId: result.insertId,
+      });
+    } else {
+      return createResponse(false, "User not registered", 500);
+    }
   } catch (error) {
     console.log("User Not Registered", error.message);
     return createResponse(false, "Error, User not registered", 500);
@@ -87,11 +102,10 @@ export const selectUserById = async (userId) => {
 export const loginUserDB = async (username, password) => {
   try {
     const [user] = await userQueryByUsername([username]);
-
     if (user.length > 0) {
       const isMatch = await bcrypt.compare(password, user[0].password);
       if (isMatch) {
-        const filteredData = omitFields(row[0], ["password", "deleted"]);
+        const filteredData = omitFields(user[0], ["password", "deleted"]);
 
         return createResponse(true, "User Found", 200, filteredData);
       } else {
@@ -178,7 +192,6 @@ export const changeUsername = async (userId, newusername) => {
     );
 
     if (result.affectedRows > 0) {
-      console.log("✅ Username updated successfully for:", newusername);
       return createResponse(true, "Username updated", 200);
     } else {
       return createResponse(false, "Unable to update username", 500);
