@@ -17,6 +17,7 @@ import {
   updateUsernameSchema,
 } from "./validators/index.js";
 
+
 export const registerUser = async (req, res) => {
   const { error } = registerUserSchema.validate(req.body);
   if (error) {
@@ -25,16 +26,7 @@ export const registerUser = async (req, res) => {
       .json({ status: false, message: error.details[0].message });
   }
 
-  const {
-    username,
-    firstname,
-    lastname,
-    password,
-    email,
-    monthlyIncome,
-    monthlyExpenses,
-    monthlySavings,
-  } = req.body;
+  const { username, firstname, lastname, password, email } = req.body;
 
   const user = await insertUser(
     username,
@@ -42,10 +34,7 @@ export const registerUser = async (req, res) => {
     lastname,
     password,
     "free",
-    email,
-    monthlyIncome,
-    monthlyExpenses,
-    monthlySavings
+    email
   );
 
   if (user.status === true) {

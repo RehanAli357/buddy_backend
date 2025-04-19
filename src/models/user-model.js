@@ -2,7 +2,6 @@ import bcrypt from "bcryptjs";
 import { createResponse } from "../utils/create-response.js";
 import { query, userQueryById, userQueryByUsername } from "./utils.js";
 import { omitFields } from "../utils/omitFields.js";
-import { insertUserFinance } from "./user-finence.js";
 
 // CREATE COMMAND
 // Use this when you want to create a user table
@@ -35,9 +34,6 @@ export const insertUser = async (
   password,
   usertype,
   email,
-  monthlyIncome,
-  monthlyExpenses,
-  monthlySavings
 ) => {
   try {
     const userQuery = `
@@ -55,13 +51,7 @@ export const insertUser = async (
       email,
     ]);
 
-    const userFinance = await insertUserFinance(
-      result.insertId,
-      monthlyIncome,
-      monthlyExpenses,
-      monthlySavings
-    );
-    if (result && userFinance.status === true) {
+    if (result) {
       return createResponse(true, "User Registered", 200, {
         registeredId: result.insertId,
       });
